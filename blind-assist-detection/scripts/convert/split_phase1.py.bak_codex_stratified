@@ -1,0 +1,304 @@
+"""
+split_phase1.py
+
+将 phase1_sanpo_5class 数据按 session 粒度划分为 train/val/test。
+
+划分规则:
+  - 按 session 划分（不按帧），防止同一 session 的帧跨集合
+  - 默认比例: train 70% / val 15% / test 15%
+  - 固定随机种子 42，确保可复现
+  - 文件名格式: {session_id}_{frame_number:06d}.png/.txt
+  - session_id 从文件名中按最后一个 '_' 分割提取
+"""
+
+import argparse
+import json
+import random
+import sys
+import time
+from pathlib import Path
+
+
+def extract_session_id(stem: str) -> str:
+    """
+    从文件名 stem 提取 session_id。
+
+    文件名格式: {session_id}_{frame_number:06d}
+    session_id 可能包含下划线，因此从右侧最后一个 '_' 分割。
+
+    例: "-5OCPnbrwJdu3jH70ieU7pUiFsOJQoeG_000000"
+      → session_id = "-5OCPnbrwJdu3jH70ieU7pUiFsOJQoeG"
+    """
+    last_underscore = stem.rfind("_")
+    if last_underscore < 0:
+        raise ValueError(f"Invalid filename format (no '_' found): {stem}")
+    return stem[:last_underscore]
+
+
+def scan_stems(data_dir: Path) -> tuple[list[str], list[str], int]:
+    """
+    扫描 images/all/ 和 labels/all/，返回配对的 stem 列表。
+
+    返回: (image_stems, paired_stems, missing_label_count)
+      - image_stems: images/all/ 中所有 .png 文件的 stem
+      - paired_stems: 同时有图像和标签的 stem
+      - missing_label_count: 有图像但无标签的数量
+    """
+    img_dir = data_dir / "images" / "all"
+    lbl_dir = data_dir / "labels" / "all"
+
+    if not img_dir.exists():
+        raise FileNotFoundError(f"Image directory not found: {img_dir}")
+
+    # 扫描图像文件
+    image_stems = sorted([p.stem for p in img_dir.glob("*.png")])
+
+    # 检查标签配对
+    paired_stems = []
+    missing_label_count = 0
+    for stem in image_stems:
+        lbl_path = lbl_dir / f"{stem}.txt"
+        if lbl_path.exists():
+            paired_stems.append(stem)
+        else:
+            missing_label_count += 1
+
+    return image_stems, paired_stems, missing_label_count
+
+
+def group_by_session(stems: list[str]) -> dict[str, list[str]]:
+    """
+    按 session_id 分组。
+
+    返回: {session_id: [stem1, stem2, ...]}
+    """
+    groups: dict[str, list[str]] = {}
+    for stem in stems:
+        session_id = extract_session_id(stem)
+        if session_id not in groups:
+            groups[session_id] = []
+        groups[session_id].append(stem)
+    # 每个 session 内部按 stem 排序
+    for sid in groups:
+        groups[sid].sort()
+    return groups
+
+
+def split_sessions(
+    session_groups: dict[str, list[str]],
+    train_ratio: float,
+    val_ratio: float,
+    seed: int,
+) -> tuple[list[str], list[str], list[str]]:
+    """
+    按 session 粒度划分 train/val/test。
+
+    返回: (train_stems, val_stems, test_stems)
+    """
+    session_keys = list(session_groups.keys())
+    random.seed(seed)
+    random.shuffle(session_keys)
+
+    total_stems = sum(len(v) for v in session_groups.values())
+    train_target = int(total_stems * train_ratio)
+    val_target = int(total_stems * val_ratio)
+
+    train_stems: list[str] = []
+    val_stems: list[str] = []
+    test_stems: list[str] = []
+
+    for key in session_keys:
+        stems = session_groups[key]
+        if len(train_stems) < train_target:
+            train_stems.extend(stems)
+        elif len(val_stems) < val_target:
+            val_stems.extend(stems)
+        else:
+            test_stems.extend(stems)
+
+    return train_stems, val_stems, test_stems
+
+
+def verify_no_leak(
+    train_stems: list[str],
+    val_stems: list[str],
+    test_stems: list[str],
+) -> tuple[bool, dict[str, int]]:
+    """
+    验证 train/val/test 之间无数据泄漏。
+
+    返回: (passed, details)
+      - passed: 是否通过
+      - details: 各级泄漏计数
+    """
+    train_set = set(train_stems)
+    val_set = set(val_stems)
+    test_set = set(test_stems)
+
+    train_val_leak = len(train_set & val_set)
+    train_test_leak = len(train_set & test_set)
+    val_test_leak = len(val_set & test_set)
+
+    # session 级泄漏检查
+    train_sessions = set(extract_session_id(s) for s in train_stems)
+    val_sessions = set(extract_session_id(s) for s in val_stems)
+    test_sessions = set(extract_session_id(s) for s in test_stems)
+
+    session_train_val_leak = len(train_sessions & val_sessions)
+    session_train_test_leak = len(train_sessions & test_sessions)
+    session_val_test_leak = len(val_sessions & test_sessions)
+
+    details = {
+        "frame_train_val_leak": train_val_leak,
+        "frame_train_test_leak": train_test_leak,
+        "frame_val_test_leak": val_test_leak,
+        "session_train_val_leak": session_train_val_leak,
+        "session_train_test_leak": session_train_test_leak,
+        "session_val_test_leak": session_val_test_leak,
+    }
+
+    passed = all(v == 0 for v in details.values())
+    return passed, details
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(
+        description="Split Phase1 SANPO data into train/val/test by session"
+    )
+    parser.add_argument(
+        "--data-dir",
+        type=str,
+        default=str(
+            Path(__file__).resolve().parent.parent.parent / "data" / "sanpo_obstacle_8class"
+        ),
+        help="Phase1 数据根目录",
+    )
+    parser.add_argument("--train-ratio", type=float, default=0.70, help="训练集占比")
+    parser.add_argument("--val-ratio", type=float, default=0.15, help="验证集占比")
+    parser.add_argument("--seed", type=int, default=42, help="随机种子")
+    parser.add_argument(
+        "--limit-stems",
+        type=int,
+        default=0,
+        help="限制使用的 stem 数量（0=全部，调试用）",
+    )
+    args = parser.parse_args()
+
+    data_dir = Path(args.data_dir)
+    train_ratio = args.train_ratio
+    val_ratio = args.val_ratio
+    seed = args.seed
+    limit_stems = args.limit_stems
+
+    t_start = time.time()
+
+    # 检查输入目录
+    if not data_dir.exists():
+        print(f"[ERROR] 数据目录不存在: {data_dir}")
+        return 1
+
+    # 扫描数据
+    print("[Split] 扫描数据...")
+    image_stems, paired_stems, missing_labels = scan_stems(data_dir)
+    print(f"[Split] 图像数: {len(image_stems)}, 配对标签数: {len(paired_stems)}, 缺失标签: {missing_labels}")
+
+    if len(paired_stems) == 0:
+        print("[ERROR] 无配对数据，请先运行 convert_sanpo_phase1.py")
+        return 1
+
+    # 调试模式: 限制 stem 数量
+    stems_to_use = paired_stems
+    if limit_stems > 0:
+        # 取前 N 个 stem，但保持按 session 分组的完整性
+        # 先分组，再按 session 顺序取
+        session_groups_all = group_by_session(paired_stems)
+        collected: list[str] = []
+        for sid in sorted(session_groups_all.keys()):
+            collected.extend(session_groups_all[sid])
+            if len(collected) >= limit_stems:
+                break
+        stems_to_use = collected
+        print(f"[Split] 调试模式: 仅使用前 {len(stems_to_use)} 个 stem")
+
+    # 检测重复 stem
+    duplicate_stems = len(stems_to_use) - len(set(stems_to_use))
+    if duplicate_stems > 0:
+        print(f"[WARN] 发现 {duplicate_stems} 个重复 stem")
+
+    # 按 session 分组
+    session_groups = group_by_session(stems_to_use)
+    print(f"[Split] 涉及 {len(session_groups)} 个 session")
+
+    # 划分
+    train_stems, val_stems, test_stems = split_sessions(
+        session_groups, train_ratio, val_ratio, seed
+    )
+
+    # 验证无泄漏
+    leak_passed, leak_details = verify_no_leak(train_stems, val_stems, test_stems)
+
+    # 统计 session 数
+    train_sessions = set(extract_session_id(s) for s in train_stems)
+    val_sessions = set(extract_session_id(s) for s in val_stems)
+    test_sessions = set(extract_session_id(s) for s in test_stems)
+
+    # 写 split 文件
+    meta_dir = data_dir / "meta"
+    meta_dir.mkdir(parents=True, exist_ok=True)
+
+    for name, stems in [
+        ("train", train_stems),
+        ("val", val_stems),
+        ("test", test_stems),
+    ]:
+        list_path = meta_dir / f"{name}.txt"
+        with open(list_path, "w", encoding="utf-8") as f:
+            for stem in stems:
+                f.write(f"{stem}\n")
+        print(f"[Split] 已写入 {list_path} ({len(stems)} 样本)")
+
+    # 生成 split_report.json
+    elapsed = time.time() - t_start
+    report = {
+        "data_dir": str(data_dir),
+        "train_ratio": train_ratio,
+        "val_ratio": val_ratio,
+        "seed": seed,
+        "total_images": len(image_stems),
+        "total_labels": len(paired_stems),
+        "total_sessions": len(session_groups),
+        "train_sessions": len(train_sessions),
+        "val_sessions": len(val_sessions),
+        "test_sessions": len(test_sessions),
+        "train_images": len(train_stems),
+        "val_images": len(val_stems),
+        "test_images": len(test_stems),
+        "missing_label_files": missing_labels,
+        "duplicate_stems": duplicate_stems,
+        "leak_check_passed": leak_passed,
+        "leak_details": leak_details,
+        "elapsed_seconds": round(elapsed, 1),
+    }
+    report_path = meta_dir / "split_report.json"
+    with open(report_path, "w", encoding="utf-8") as f:
+        json.dump(report, f, indent=2, ensure_ascii=False)
+    print(f"[Split] 已写入 {report_path}")
+
+    # 打印摘要
+    print("=" * 60)
+    print(f"[Split] 划分完成 ({elapsed:.1f}s)")
+    print(f"[Split] train: {len(train_sessions)} sessions, {len(train_stems)} 帧")
+    print(f"[Split] val:   {len(val_sessions)} sessions, {len(val_stems)} 帧")
+    print(f"[Split] test:  {len(test_sessions)} sessions, {len(test_stems)} 帧")
+    print(f"[Split] 泄漏检查: {'PASS' if leak_passed else 'FAIL'}")
+    if not leak_passed:
+        for k, v in leak_details.items():
+            if v > 0:
+                print(f"  [FAIL] {k}: {v}")
+
+    print("[Split] Done.")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -1,0 +1,27 @@
+# 面向视障人士的 MobileNet 障碍感知系统 - 依赖列表
+
+# 深度学习框架
+torch>=2.0.0
+torchvision>=0.15.0
+
+# 数据处理
+numpy>=1.24.0
+Pillow>=9.0.0
+opencv-python>=4.7.0
+
+# 机器学习
+scikit-learn>=1.2.0
+
+# 配置
+PyYAML>=6.0
+
+# 可视化
+tensorboard>=2.12.0
+matplotlib>=3.7.0
+
+# 模型导出 (可选)
+onnx>=1.14.0
+onnxruntime>=1.14.0
+
+# 开发工具 (可选)
+tqdm>=4.65.0

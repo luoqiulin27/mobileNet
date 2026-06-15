@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>室内/室外障碍物自动识别测试台</title>
+  <style>
+    :root {
+      --bg-a: #eef0e7;
+      --bg-b: #dfe9ed;
+      --ink: #182126;
+      --muted: #65737b;
+      --panel: rgba(255, 252, 246, 0.9);
+      --line: rgba(24, 33, 38, 0.1);
+      --accent: #c24e24;
+      --accent-2: #0c756d;
+      --ok: #11795f;
+      --error: #a23224;
+      --shadow: 0 24px 64px rgba(24, 33, 38, 0.13);
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 12% 12%, rgba(194, 78, 36, 0.18), transparent 28%),
+        radial-gradient(circle at 88% 20%, rgba(12, 117, 109, 0.18), transparent 24%),
+        linear-gradient(135deg, var(--bg-a), var(--bg-b));
+      font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+    }
+
+    .shell { width: min(1180px, calc(100% - 32px)); margin: 0 auto; padding: 28px 0 44px; }
+    .card { background: var(--panel); border: 1px solid var(--line); border-radius: 24px; box-shadow: var(--shadow); backdrop-filter: blur(10px); }
+    .hero { display: grid; grid-template-columns: 1.2fr 0.8fr; gap: 18px; }
+    .hero-main { padding: 30px; }
+    .hero-side { padding: 22px; display: grid; gap: 12px; }
+    .eyebrow { display: inline-flex; padding: 8px 12px; border-radius: 999px; background: rgba(24, 33, 38, 0.06); color: var(--muted); font-size: 13px; }
+    h1 { margin: 16px 0 10px; font-size: clamp(30px, 4vw, 48px); line-height: 1.05; }
+    h2 { margin: 0 0 10px; font-size: 22px; }
+    p { color: var(--muted); line-height: 1.7; }
+    .meta { padding: 14px 16px; border-radius: 16px; background: rgba(255, 255, 255, 0.62); border: 1px solid rgba(24, 33, 38, 0.08); }
+    .meta small { display: block; color: var(--muted); margin-bottom: 5px; }
+    .meta strong { word-break: break-all; }
+    .ok { color: var(--ok); }
+    .error { color: var(--error); }
+
+    .workspace { display: grid; grid-template-columns: 0.92fr 1.08fr; gap: 18px; margin-top: 18px; }
+    .panel { padding: 24px; }
+    form { display: grid; gap: 14px; }
+    .picker, .field { padding: 16px; border-radius: 18px; background: rgba(255, 255, 255, 0.58); border: 1px solid rgba(24, 33, 38, 0.1); }
+    label { display: block; color: var(--muted); font-size: 14px; margin-bottom: 8px; }
+    input[type="file"], select { width: 100%; }
+    input[type="number"], select {
+      padding: 10px 12px;
+      border: 1px solid rgba(24, 33, 38, 0.16);
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.85);
+      color: var(--ink);
+      font-size: 15px;
+    }
+    input[type="number"] { width: 160px; }
+    button {
+      border: 0;
+      border-radius: 16px;
+      padding: 14px 20px;
+      background: linear-gradient(135deg, var(--accent), #8f2d12);
+      color: #fff8f0;
+      font-size: 15px;
+      font-weight: 700;
+      cursor: pointer;
+      box-shadow: 0 14px 24px rgba(143, 45, 18, 0.18);
+    }
+    .hint { padding: 14px 16px; border-radius: 16px; font-size: 14px; line-height: 1.7; background: rgba(12, 117, 109, 0.08); color: #164f4b; }
+    .warn { background: rgba(162, 50, 36, 0.09); color: var(--error); }
+
+    .status-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 16px; }
+    .status-item { padding: 14px 16px; border-radius: 16px; background: rgba(255, 255, 255, 0.62); border: 1px solid rgba(24, 33, 38, 0.08); }
+    .status-item span { color: var(--muted); font-size: 13px; }
+    .status-item strong { display: block; margin-top: 6px; font-size: 18px; }
+    .preview { padding: 14px; border-radius: 18px; background: rgba(255, 255, 255, 0.64); border: 1px solid rgba(24, 33, 38, 0.08); }
+    img { display: block; width: 100%; border-radius: 14px; }
+    .empty { padding: 22px; border-radius: 18px; text-align: center; color: var(--muted); border: 1px dashed rgba(24, 33, 38, 0.14); background: rgba(255, 255, 255, 0.45); }
+    table { width: 100%; border-collapse: collapse; font-size: 14px; border-radius: 16px; overflow: hidden; background: rgba(255, 255, 255, 0.66); }
+    th, td { padding: 12px 14px; text-align: left; border-bottom: 1px solid rgba(24, 33, 38, 0.08); }
+    th { color: var(--muted); }
+    code { padding: 2px 6px; border-radius: 8px; background: rgba(24, 33, 38, 0.06); }
+    @media (max-width: 980px) { .hero, .workspace { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <section class="hero">
+      <article class="hero-main card">
+        <span class="eyebrow">自动场景切换 + 双模型障碍物检测</span>
+        <h1>室内/室外障碍物自动识别测试台</h1>
+        <p>默认无需手动选择场景：系统会先判断图片是室内还是室外，再调用 SUNRGBD 室内模型或 SANPO 室外模型。场景判断不确定时，会同时运行两个检测模型并选择更可信的结果。</p>
+      </article>
+      <aside class="hero-side card">
+        <div class="meta">
+          <small>当前选择</small>
+          <strong>{{ "自动判断" if requested_key == "auto" else decision.selected_label }}</strong>
+        </div>
+        <div class="meta">
+          <small>本次实际调用</small>
+          <strong>{{ decision.selected_label }}</strong>
+        </div>
+        <div class="meta">
+          <small>场景分类器</small>
+          <strong class="{{ 'ok' if scene_status.checkpoint_ready else 'error' }}">
+            {{ "已就绪" if scene_status.checkpoint_ready else "训练中或未找到" }}
+          </strong>
+        </div>
+      </aside>
+    </section>
+
+    <section class="workspace">
+      <article class="panel card">
+        <h2>上传测试</h2>
+        <p>{{ decision.reason }}</p>
+        <form method="post" enctype="multipart/form-data">
+          <div class="field">
+            <label for="mode">识别模式</label>
+            <select id="mode" name="mode">
+              {% for option in select_options %}
+                <option value="{{ option.key }}" {{ "selected" if option.key == requested_key else "" }}>{{ option.label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <label class="picker">
+            <span>选择图片</span>
+            <input type="file" name="image" accept="image/*" required>
+          </label>
+          <div class="field">
+            <label for="conf_threshold">检测置信度阈值，当前 SSD 模型建议 0.03 到 0.10</label>
+            <input id="conf_threshold" type="number" name="conf_threshold" min="0.01" max="0.9" step="0.01" value="{{ conf_threshold }}">
+          </div>
+          <button type="submit">开始识别</button>
+        </form>
+
+        {% if error %}
+          <div class="hint warn" style="margin-top: 14px;">{{ error }}</div>
+        {% else %}
+          <div class="hint" style="margin-top: 14px;">
+            自动切换阈值：{{ scene_status.confidence_threshold }}。
+            {% if decision.scene_label %}
+              场景判断：{{ "室内" if decision.scene_label == "indoor" else "室外" }}，置信度 {{ "%.3f"|format(decision.scene_confidence) }}。
+            {% else %}
+              上传后会显示场景判断置信度。
+            {% endif %}
+            {% if decision.fallback_used %}本次已启用双模型兜底。{% endif %}
+          </div>
+        {% endif %}
+
+        <div class="status-grid">
+          <div class="status-item"><span>室外 mAP</span><strong>{{ "%.4f"|format(modes.outdoor.metrics.mAP) if modes.outdoor.metrics else "未评估" }}</strong></div>
+          <div class="status-item"><span>室内 mAP</span><strong>{{ "%.4f"|format(modes.indoor.metrics.mAP) if modes.indoor.metrics else "未评估" }}</strong></div>
+          <div class="status-item"><span>场景分类最佳验证准确率</span><strong>{{ "%.4f"|format(scene_status.best_val_acc) if scene_status.best_val_acc else "训练中" }}</strong></div>
+          <div class="status-item"><span>当前检测数</span><strong>{{ detections|length }}</strong></div>
+          <div class="status-item"><span>当前阈值</span><strong>{{ conf_threshold }}</strong></div>
+          <div class="status-item"><span>兜底状态</span><strong>{{ "已启用" if decision.fallback_used else "未启用" }}</strong></div>
+        </div>
+      </article>
+
+      <article class="panel card">
+        <h2>识别结果</h2>
+        {% if result_image %}
+          <div class="preview">
+            <img src="data:image/png;base64,{{ result_image }}" alt="检测结果">
+          </div>
+        {% else %}
+          <div class="empty">上传图片后，这里会显示带红框的检测结果。</div>
+        {% endif %}
+
+        {% if detections %}
+          <table style="margin-top: 16px;">
+            <thead><tr><th>类别</th><th>置信度</th><th>框坐标</th></tr></thead>
+            <tbody>
+              {% for det in detections %}
+                <tr><td>{{ det.label }}</td><td>{{ "%.3f"|format(det.score) }}</td><td>{{ det.box }}</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        {% else %}
+          <div class="empty" style="margin-top: 16px;">当前还没有超过阈值的检测结果。如果只是想看模型是否有响应，可先把阈值调到 0.01。</div>
+        {% endif %}
+      </article>
+    </section>
+  </main>
+</body>
+</html>

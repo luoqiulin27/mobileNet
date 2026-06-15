@@ -1,0 +1,56 @@
+# ===== 数据集（太大，不上传）=====
+data/
+*.zip
+*.tar.gz
+*.rar
+
+# ===== 模型权重（可选排除，如需上传可注释掉）=====
+outputs/checkpoints/
+*.pth
+*.pt
+*.onnx
+*.tflite
+
+# ===== 训练输出（日志、指标、可视化）=====
+**/outputs/logs/
+**/outputs/metrics/
+**/outputs/visualizations/
+**/outputs/checkpoints/
+
+# ===== Python 缓存 =====
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# ===== 虚拟环境 =====
+.venv/
+venv/
+env/
+*.egg-info/
+dist/
+build/
+
+# ===== IDE =====
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ===== 系统文件 =====
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ===== 日志和临时文件=====
+*.log
+tensorboard/
+runs/
+wandb/
+
+# ===== Claude 配置 =====
+.claude/
+
+# ===== 嵌套 Git 仓库 =====
+1/blind-assistant-system/
