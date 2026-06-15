@@ -266,9 +266,17 @@ def automatic_detect(
     detector_outputs: dict[str, tuple[DetectionPredictor, list[Detection]]] = {}
     detector_scores: dict[str, float] = {}
     for mode_key in ("outdoor", "indoor"):
-        predictor, detections = run_detector(mode_key, image, conf_threshold)
-        detector_outputs[mode_key] = (predictor, detections)
-        detector_scores[mode_key] = detection_score(detections)
+        if resolve_checkpoint_path(MODES[mode_key]) is None:
+            continue
+        try:
+            predictor, detections = run_detector(mode_key, image, conf_threshold)
+            detector_outputs[mode_key] = (predictor, detections)
+            detector_scores[mode_key] = detection_score(detections)
+        except Exception:
+            continue
+
+    if not detector_outputs:
+        raise FileNotFoundError("没有可用的检测模型 checkpoint，请先训练模型。")
 
     selected_key = max(detector_scores, key=detector_scores.get)
     predictor, detections = detector_outputs[selected_key]
