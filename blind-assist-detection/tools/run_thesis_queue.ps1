@@ -47,6 +47,33 @@ function Test-EvalDone($runName, $evalType) {
     return (Test-Path -LiteralPath $outputPath)
 }
 
+# Check if experiment is fully done (train 100ep + both evals)
+function Test-ExperimentComplete($runName) {
+    return (Test-EvalDone $runName "eval_map_val_conf0p05.json") -and
+           (Test-EvalDone $runName "eval_safety_val_conf0p05.json") -and
+           (Test-EvalDone $runName "eval_map_val_conf0p30.json") -and
+           (Test-EvalDone $runName "eval_safety_val_conf0p30.json")
+}
+
+# Check if we should stop after this experiment
+function Test-StopRequested($tag) {
+    $stopFile = "outputs\runs\.stop_after"
+    if (-not (Test-Path -LiteralPath $stopFile)) { return $false }
+    try {
+        $wantedTag = (Get-Content -Raw -LiteralPath $stopFile).Trim()
+        return $wantedTag -eq $tag
+    } catch {
+        return $false
+    }
+}
+
+# Write current queue position for tomorrow's resume
+function Write-QueueState($nextTag) {
+    $stateFile = "outputs\runs\.queue_state"
+    @{ next_tag = $nextTag; updated = (Get-Date -Format "yyyy-MM-dd HH:mm:ss") } | ConvertTo-Json | Set-Content -LiteralPath $stateFile -Encoding UTF8
+    Write-Stage "QUEUE STATE saved  next=$nextTag"
+}
+
 function Invoke-GitPush($runName, $tag) {
     Write-Stage "GIT-PUSH START  run=$runName tag=$tag"
     try {
@@ -181,19 +208,35 @@ function Invoke-EvalSafety($config, $runName, $split = "val", $confThreshold = $
     Write-Stage "EVAL-SAFETY DONE   -> $outputPath"
 }
 
-function Invoke-TrainAndEval($tag, $config, $runName, $epochs = 100, $needsTraining = $true) {
+function Invoke-TrainAndEval($tag, $config, $runName, $epochs = 100, $nextTag = $null) {
     Write-Stage "============================================================"
     Write-Stage "EXPERIMENT: $tag"
     Write-Stage "============================================================"
 
-    if ($needsTraining) {
-        if (Test-TrainingDone $runName) {
-            Write-Stage "TRAIN SKIP  already complete (epoch>=epochs)"
-        } else {
-            Invoke-Train $config $runName $epochs
-        }
+    # ---- skip if already fully done ----
+    if (Test-ExperimentComplete $runName) {
+        Write-Stage "EXPERIMENT $tag ALREADY COMPLETE (all eval results exist) - skipping"
+        Write-Stage ""
+        return
+    }
+
+    # ---- skip if this experiment is not the next to run ----
+    $stateFile = "outputs\runs\.queue_state"
+    if (Test-Path -LiteralPath $stateFile) {
+        try {
+            $state = Get-Content -Raw -LiteralPath $stateFile | ConvertFrom-Json
+            if ($state.next_tag -and $state.next_tag -ne $tag) {
+                Write-Stage "EXPERIMENT $tag SKIP (queue state says next=$($state.next_tag))"
+                Write-Stage ""
+                return
+            }
+        } catch {}
+    }
+
+    if (Test-TrainingDone $runName) {
+        Write-Stage "TRAIN SKIP  already complete (epoch>=epochs)"
     } else {
-        Write-Stage "TRAIN SKIP  (training not required for $tag)"
+        Invoke-Train $config $runName $epochs
     }
 
     # eval with both conf=0.05 (thesis standard) and conf=0.30 (safety comparison)
@@ -219,6 +262,18 @@ function Invoke-TrainAndEval($tag, $config, $runName, $epochs = 100, $needsTrain
 
     # ---- auto commit & push results to git ----
     Invoke-GitPush -runName $runName -tag $tag
+
+    # ---- write queue state for tomorrow ----
+    if ($nextTag) { Write-QueueState $nextTag }
+
+    # ---- stop if requested ----
+    if (Test-StopRequested $tag) {
+        Write-Stage "============================================================"
+        Write-Stage "STOPPING after $tag (stop file found)"
+        Write-Stage "Remove outputs\runs\.stop_after to resume full queue"
+        Write-Stage "============================================================"
+        exit 0
+    }
 }
 
 
@@ -294,36 +349,40 @@ Write-Stage "============================================================"
 Write-Stage "QUEUE START  $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
 Write-Stage "============================================================"
 
-# ---- A3: CIoU (train from scratch) ----
+# ---- A3: CIoU ----
 Invoke-TrainAndEval `
     -tag "A3_CIoU" `
     -config "src\configs\ssd_default_ciou.yaml" `
     -runName "sanpo_ablation_ciou_formal100" `
-    -needsTraining $true
+    -nextTag "A4_ECA_CIoU"
 
 # ---- A4: ECA + CIoU ----
 Invoke-TrainAndEval `
     -tag "A4_ECA_CIoU" `
     -config "src\configs\ssd_default_eca_ciou.yaml" `
-    -runName "sanpo_ablation_eca_ciou_formal100"
+    -runName "sanpo_ablation_eca_ciou_formal100" `
+    -nextTag "B1_SE"
 
 # ---- B1: SE ----
 Invoke-TrainAndEval `
     -tag "B1_SE" `
     -config "src\configs\ssd_default_se.yaml" `
-    -runName "sanpo_ablation_se_formal100"
+    -runName "sanpo_ablation_se_formal100" `
+    -nextTag "B2_CBAM"
 
 # ---- B2: CBAM ----
 Invoke-TrainAndEval `
     -tag "B2_CBAM" `
     -config "src\configs\ssd_default_cbam.yaml" `
-    -runName "sanpo_ablation_cbam_formal100"
+    -runName "sanpo_ablation_cbam_formal100" `
+    -nextTag "B3_IoU"
 
 # ---- B3: IoU ----
 Invoke-TrainAndEval `
     -tag "B3_IoU" `
     -config "src\configs\ssd_default_iou.yaml" `
-    -runName "sanpo_ablation_iou_formal100"
+    -runName "sanpo_ablation_iou_formal100" `
+    -nextTag "B4_DIoU"
 
 # ---- B4: DIoU ----
 Invoke-TrainAndEval `
