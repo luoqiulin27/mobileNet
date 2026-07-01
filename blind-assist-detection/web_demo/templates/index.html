@@ -6,87 +6,576 @@
   <title>室内/室外障碍物自动识别测试台</title>
   <style>
     :root {
-      --bg-a: #eef0e7;
-      --bg-b: #dfe9ed;
-      --ink: #182126;
-      --muted: #65737b;
+      --bg-0: #f3eee5;
+      --bg-1: #dae7ea;
+      --ink: #162228;
+      --muted: #66757f;
+      --muted-strong: #42525b;
       --panel: rgba(255, 252, 246, 0.9);
-      --line: rgba(24, 33, 38, 0.1);
-      --accent: #c24e24;
-      --accent-2: #0c756d;
-      --ok: #11795f;
-      --error: #a23224;
-      --shadow: 0 24px 64px rgba(24, 33, 38, 0.13);
+      --panel-strong: rgba(255, 255, 255, 0.72);
+      --line: rgba(22, 34, 40, 0.1);
+      --accent: #c35a29;
+      --accent-deep: #8f3217;
+      --accent-soft: rgba(195, 90, 41, 0.12);
+      --teal: #146f68;
+      --teal-soft: rgba(20, 111, 104, 0.12);
+      --ok: #0f7b5f;
+      --error: #9f3426;
+      --warning: #9b6618;
+      --shadow: 0 30px 70px rgba(22, 34, 40, 0.14);
+      --shadow-soft: 0 14px 34px rgba(22, 34, 40, 0.08);
+      --radius-xl: 30px;
+      --radius-lg: 22px;
+      --radius-md: 16px;
+      --radius-sm: 12px;
     }
 
     * { box-sizing: border-box; }
+
+    html { scroll-behavior: smooth; }
+
     body {
       margin: 0;
       min-height: 100vh;
       color: var(--ink);
       background:
-        radial-gradient(circle at 12% 12%, rgba(194, 78, 36, 0.18), transparent 28%),
-        radial-gradient(circle at 88% 20%, rgba(12, 117, 109, 0.18), transparent 24%),
-        linear-gradient(135deg, var(--bg-a), var(--bg-b));
+        radial-gradient(circle at 12% 14%, rgba(195, 90, 41, 0.2), transparent 28%),
+        radial-gradient(circle at 83% 16%, rgba(20, 111, 104, 0.18), transparent 24%),
+        radial-gradient(circle at 50% 100%, rgba(255, 255, 255, 0.65), transparent 36%),
+        linear-gradient(135deg, var(--bg-0), var(--bg-1));
       font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
     }
 
-    .shell { width: min(1180px, calc(100% - 32px)); margin: 0 auto; padding: 28px 0 44px; }
-    .card { background: var(--panel); border: 1px solid var(--line); border-radius: 24px; box-shadow: var(--shadow); backdrop-filter: blur(10px); }
-    .hero { display: grid; grid-template-columns: 1.2fr 0.8fr; gap: 18px; }
-    .hero-main { padding: 30px; }
-    .hero-side { padding: 22px; display: grid; gap: 12px; }
-    .eyebrow { display: inline-flex; padding: 8px 12px; border-radius: 999px; background: rgba(24, 33, 38, 0.06); color: var(--muted); font-size: 13px; }
-    h1 { margin: 16px 0 10px; font-size: clamp(30px, 4vw, 48px); line-height: 1.05; }
-    h2 { margin: 0 0 10px; font-size: 22px; }
-    p { color: var(--muted); line-height: 1.7; }
-    .meta { padding: 14px 16px; border-radius: 16px; background: rgba(255, 255, 255, 0.62); border: 1px solid rgba(24, 33, 38, 0.08); }
-    .meta small { display: block; color: var(--muted); margin-bottom: 5px; }
-    .meta strong { word-break: break-all; }
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      background-image:
+        linear-gradient(rgba(255, 255, 255, 0.08) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255, 255, 255, 0.08) 1px, transparent 1px);
+      background-size: 30px 30px;
+      mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.4), transparent 82%);
+      opacity: 0.45;
+    }
+
+    .shell {
+      width: min(1240px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 28px 0 40px;
+    }
+
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-xl);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(14px);
+    }
+
+    .hero {
+      display: grid;
+      grid-template-columns: minmax(0, 1.3fr) minmax(320px, 0.7fr);
+      gap: 18px;
+      align-items: stretch;
+    }
+
+    .hero-main {
+      position: relative;
+      overflow: hidden;
+      padding: 34px;
+    }
+
+    .hero-main::after {
+      content: "";
+      position: absolute;
+      right: -60px;
+      top: -60px;
+      width: 220px;
+      height: 220px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(195, 90, 41, 0.16), transparent 70%);
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 14px;
+      border-radius: 999px;
+      background: rgba(22, 34, 40, 0.06);
+      color: var(--muted-strong);
+      font-size: 13px;
+      letter-spacing: 0.02em;
+    }
+
+    h1 {
+      margin: 18px 0 12px;
+      font-size: clamp(32px, 4.8vw, 54px);
+      line-height: 1.02;
+      max-width: 11ch;
+    }
+
+    h2 {
+      margin: 0;
+      font-size: 24px;
+      line-height: 1.2;
+    }
+
+    h3 {
+      margin: 0;
+      font-size: 16px;
+    }
+
+    p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.75;
+    }
+
+    .hero-copy {
+      max-width: 72ch;
+      font-size: 15px;
+    }
+
+    .hero-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 24px;
+    }
+
+    .mini-stat {
+      min-width: 180px;
+      padding: 14px 16px;
+      border-radius: 18px;
+      background: rgba(255, 255, 255, 0.64);
+      border: 1px solid rgba(22, 34, 40, 0.08);
+      box-shadow: var(--shadow-soft);
+    }
+
+    .mini-stat span,
+    .meta small,
+    .field label,
+    .label {
+      display: block;
+      color: var(--muted);
+      font-size: 13px;
+      margin-bottom: 6px;
+    }
+
+    .mini-stat strong,
+    .meta strong {
+      display: block;
+      font-size: 17px;
+      line-height: 1.35;
+      word-break: break-word;
+    }
+
+    .hero-side {
+      padding: 22px;
+      display: grid;
+      gap: 12px;
+      align-content: start;
+    }
+
+    .meta {
+      padding: 16px;
+      border-radius: 18px;
+      background: var(--panel-strong);
+      border: 1px solid rgba(22, 34, 40, 0.08);
+    }
+
+    .decision-banner {
+      padding: 16px 18px;
+      border-radius: 20px;
+      background: linear-gradient(135deg, rgba(20, 111, 104, 0.14), rgba(20, 111, 104, 0.06));
+      border: 1px solid rgba(20, 111, 104, 0.12);
+    }
+
+    .decision-banner strong {
+      display: block;
+      margin-bottom: 6px;
+      font-size: 18px;
+    }
+
     .ok { color: var(--ok); }
     .error { color: var(--error); }
+    .warning { color: var(--warning); }
 
-    .workspace { display: grid; grid-template-columns: 0.92fr 1.08fr; gap: 18px; margin-top: 18px; }
-    .panel { padding: 24px; }
-    form { display: grid; gap: 14px; }
-    .picker, .field { padding: 16px; border-radius: 18px; background: rgba(255, 255, 255, 0.58); border: 1px solid rgba(24, 33, 38, 0.1); }
-    label { display: block; color: var(--muted); font-size: 14px; margin-bottom: 8px; }
-    input[type="file"], select { width: 100%; }
-    input[type="number"], select {
-      padding: 10px 12px;
-      border: 1px solid rgba(24, 33, 38, 0.16);
-      border-radius: 12px;
-      background: rgba(255, 255, 255, 0.85);
+    .workspace {
+      display: grid;
+      grid-template-columns: minmax(0, 0.96fr) minmax(0, 1.04fr);
+      gap: 18px;
+      margin-top: 18px;
+    }
+
+    .panel {
+      padding: 26px;
+    }
+
+    .panel-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 18px;
+      align-items: flex-start;
+      margin-bottom: 18px;
+    }
+
+    .panel-copy {
+      max-width: 60ch;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: rgba(22, 34, 40, 0.06);
+      color: var(--muted-strong);
+      white-space: nowrap;
+      font-size: 13px;
+    }
+
+    form {
+      display: grid;
+      gap: 14px;
+    }
+
+    .field,
+    .picker,
+    .mode-card,
+    .summary-card,
+    .score-card,
+    .result-callout {
+      padding: 16px;
+      border-radius: var(--radius-lg);
+      background: rgba(255, 255, 255, 0.62);
+      border: 1px solid rgba(22, 34, 40, 0.08);
+    }
+
+    .picker {
+      display: grid;
+      gap: 10px;
+      cursor: pointer;
+      transition: border-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .picker:hover {
+      transform: translateY(-1px);
+      border-color: rgba(195, 90, 41, 0.28);
+      box-shadow: var(--shadow-soft);
+    }
+
+    .picker-title {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: center;
+      font-weight: 600;
+    }
+
+    .picker strong {
+      font-size: 16px;
+    }
+
+    .picker-note {
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    input[type="file"],
+    select {
+      width: 100%;
+    }
+
+    input[type="number"],
+    select {
+      padding: 12px 13px;
+      border: 1px solid rgba(22, 34, 40, 0.16);
+      border-radius: var(--radius-sm);
+      background: rgba(255, 255, 255, 0.88);
       color: var(--ink);
       font-size: 15px;
     }
+
     input[type="number"] { width: 160px; }
+
+    .field-help {
+      margin-top: 8px;
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: center;
+    }
+
     button {
       border: 0;
       border-radius: 16px;
       padding: 14px 20px;
-      background: linear-gradient(135deg, var(--accent), #8f2d12);
-      color: #fff8f0;
+      background: linear-gradient(135deg, var(--accent), var(--accent-deep));
+      color: #fff7f1;
       font-size: 15px;
       font-weight: 700;
       cursor: pointer;
-      box-shadow: 0 14px 24px rgba(143, 45, 18, 0.18);
+      box-shadow: 0 16px 28px rgba(143, 50, 23, 0.2);
+      transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
     }
-    .hint { padding: 14px 16px; border-radius: 16px; font-size: 14px; line-height: 1.7; background: rgba(12, 117, 109, 0.08); color: #164f4b; }
-    .warn { background: rgba(162, 50, 36, 0.09); color: var(--error); }
 
-    .status-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 16px; }
-    .status-item { padding: 14px 16px; border-radius: 16px; background: rgba(255, 255, 255, 0.62); border: 1px solid rgba(24, 33, 38, 0.08); }
-    .status-item span { color: var(--muted); font-size: 13px; }
-    .status-item strong { display: block; margin-top: 6px; font-size: 18px; }
-    .preview { padding: 14px; border-radius: 18px; background: rgba(255, 255, 255, 0.64); border: 1px solid rgba(24, 33, 38, 0.08); }
-    img { display: block; width: 100%; border-radius: 14px; }
-    .empty { padding: 22px; border-radius: 18px; text-align: center; color: var(--muted); border: 1px dashed rgba(24, 33, 38, 0.14); background: rgba(255, 255, 255, 0.45); }
-    table { width: 100%; border-collapse: collapse; font-size: 14px; border-radius: 16px; overflow: hidden; background: rgba(255, 255, 255, 0.66); }
-    th, td { padding: 12px 14px; text-align: left; border-bottom: 1px solid rgba(24, 33, 38, 0.08); }
-    th { color: var(--muted); }
-    code { padding: 2px 6px; border-radius: 8px; background: rgba(24, 33, 38, 0.06); }
-    @media (max-width: 980px) { .hero, .workspace { grid-template-columns: 1fr; } }
+    button:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 20px 34px rgba(143, 50, 23, 0.24);
+    }
+
+    button:disabled {
+      opacity: 0.78;
+      cursor: wait;
+    }
+
+    .subtle-action {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .hint {
+      padding: 15px 16px;
+      border-radius: 18px;
+      font-size: 14px;
+      line-height: 1.7;
+      background: var(--teal-soft);
+      color: #164d49;
+      border: 1px solid rgba(20, 111, 104, 0.1);
+    }
+
+    .warn {
+      background: rgba(159, 52, 38, 0.09);
+      border-color: rgba(159, 52, 38, 0.1);
+      color: var(--error);
+    }
+
+    .mode-grid,
+    .result-grid,
+    .status-grid,
+    .score-grid {
+      display: grid;
+      gap: 12px;
+    }
+
+    .mode-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .status-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top: 16px; }
+    .score-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top: 16px; }
+    .result-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top: 16px; }
+
+    .mode-card {
+      display: grid;
+      gap: 10px;
+      align-content: start;
+      min-height: 176px;
+    }
+
+    .mode-card.is-active {
+      border-color: rgba(195, 90, 41, 0.26);
+      background: linear-gradient(180deg, rgba(195, 90, 41, 0.12), rgba(255, 255, 255, 0.7));
+    }
+
+    .mode-card-header {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: flex-start;
+    }
+
+    .mode-chip {
+      display: inline-flex;
+      padding: 5px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      background: rgba(22, 34, 40, 0.07);
+      color: var(--muted-strong);
+    }
+
+    .mode-chip.ready {
+      background: rgba(15, 123, 95, 0.12);
+      color: var(--ok);
+    }
+
+    .mode-chip.pending {
+      background: rgba(159, 52, 38, 0.1);
+      color: var(--error);
+    }
+
+    .mode-meta {
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.6;
+    }
+
+    .mode-meta strong {
+      color: var(--ink);
+      font-size: 15px;
+    }
+
+    .status-item,
+    .summary-card,
+    .score-card {
+      background: rgba(255, 255, 255, 0.64);
+      border: 1px solid rgba(22, 34, 40, 0.08);
+      border-radius: 18px;
+    }
+
+    .status-item span,
+    .summary-card span,
+    .score-card span {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .status-item strong,
+    .summary-card strong,
+    .score-card strong {
+      display: block;
+      margin-top: 6px;
+      font-size: 18px;
+      line-height: 1.35;
+    }
+
+    .summary-card,
+    .score-card {
+      padding: 16px;
+    }
+
+    .preview {
+      padding: 14px;
+      border-radius: 22px;
+      background: rgba(255, 255, 255, 0.64);
+      border: 1px solid rgba(22, 34, 40, 0.08);
+    }
+
+    img {
+      display: block;
+      width: 100%;
+      border-radius: 14px;
+      background: rgba(22, 34, 40, 0.04);
+    }
+
+    .result-callout {
+      background: linear-gradient(135deg, rgba(195, 90, 41, 0.12), rgba(255, 255, 255, 0.72));
+    }
+
+    .empty {
+      padding: 28px 22px;
+      border-radius: 22px;
+      text-align: center;
+      color: var(--muted);
+      border: 1px dashed rgba(22, 34, 40, 0.14);
+      background: rgba(255, 255, 255, 0.45);
+      line-height: 1.75;
+    }
+
+    .table-wrap {
+      overflow: auto;
+      margin-top: 16px;
+      border-radius: 18px;
+      border: 1px solid rgba(22, 34, 40, 0.08);
+      background: rgba(255, 255, 255, 0.7);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+    }
+
+    th, td {
+      padding: 12px 14px;
+      text-align: left;
+      border-bottom: 1px solid rgba(22, 34, 40, 0.08);
+      vertical-align: top;
+    }
+
+    th {
+      color: var(--muted);
+      font-weight: 600;
+      background: rgba(255, 255, 255, 0.7);
+    }
+
+    tbody tr:last-child td {
+      border-bottom: 0;
+    }
+
+    code {
+      padding: 2px 6px;
+      border-radius: 8px;
+      background: rgba(22, 34, 40, 0.06);
+      font-family: "Consolas", "SFMono-Regular", monospace;
+      font-size: 13px;
+    }
+
+    .sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
+
+    @media (max-width: 1100px) {
+      .mode-grid { grid-template-columns: 1fr; }
+    }
+
+    @media (max-width: 980px) {
+      .hero,
+      .workspace,
+      .result-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .panel-head {
+        flex-direction: column;
+      }
+
+      .hero-main,
+      .panel {
+        padding: 22px;
+      }
+    }
+
+    @media (max-width: 720px) {
+      .shell {
+        width: min(100% - 20px, 1240px);
+        padding-top: 14px;
+      }
+
+      .hero-actions,
+      .actions {
+        flex-direction: column;
+        align-items: stretch;
+      }
+
+      .mini-stat,
+      button,
+      input[type="number"] {
+        width: 100%;
+      }
+
+      .status-grid,
+      .score-grid {
+        grid-template-columns: 1fr;
+      }
+
+      h1 {
+        max-width: none;
+      }
+    }
   </style>
 </head>
 <body>
@@ -95,98 +584,304 @@
       <article class="hero-main card">
         <span class="eyebrow">自动场景切换 + 双模型障碍物检测</span>
         <h1>室内/室外障碍物自动识别测试台</h1>
-        <p>默认无需手动选择场景：系统会先判断图片是室内还是室外，再调用 SUNRGBD 室内模型或 SANPO 室外模型。场景判断不确定时，会同时运行两个检测模型并选择更可信的结果。</p>
+        <p class="hero-copy">
+          上传单张图片后，系统会先判断当前环境属于室内还是室外，再自动调用对应的 SSD 检测模型。
+          如果场景分类信心不足，会同时运行两个检测器并选出更可信的结果，适合本地快速验证模型可用性。
+        </p>
+        <div class="hero-actions">
+          <div class="mini-stat">
+            <span>当前识别模式</span>
+            <strong>{{ "自动判断" if requested_key == "auto" else decision.selected_label }}</strong>
+          </div>
+          <div class="mini-stat">
+            <span>本次实际调用</span>
+            <strong>{{ decision.selected_label }}</strong>
+          </div>
+          <div class="mini-stat">
+            <span>当前阈值</span>
+            <strong>{{ "%.2f"|format(conf_threshold) }}</strong>
+          </div>
+        </div>
       </article>
+
       <aside class="hero-side card">
-        <div class="meta">
-          <small>当前选择</small>
-          <strong>{{ "自动判断" if requested_key == "auto" else decision.selected_label }}</strong>
+        <div class="decision-banner">
+          <small class="label">决策说明</small>
+          <strong>{{ decision.reason }}</strong>
+          <p>
+            {% if decision.scene_label %}
+              场景判断为{{ "室内" if decision.scene_label == "indoor" else "室外" }}，
+              置信度 {{ "%.3f"|format(decision.scene_confidence) }}。
+            {% else %}
+              上传图片后，这里会展示场景分类与模型切换逻辑。
+            {% endif %}
+          </p>
         </div>
+
         <div class="meta">
-          <small>本次实际调用</small>
-          <strong>{{ decision.selected_label }}</strong>
-        </div>
-        <div class="meta">
-          <small>场景分类器</small>
+          <small>场景分类器状态</small>
           <strong class="{{ 'ok' if scene_status.checkpoint_ready else 'error' }}">
-            {{ "已就绪" if scene_status.checkpoint_ready else "训练中或未找到" }}
+            {{ "已就绪" if scene_status.checkpoint_ready else "训练中或未找到 checkpoint" }}
           </strong>
+          <p>{{ scene_status.checkpoint_name }}</p>
+        </div>
+
+        <div class="meta">
+          <small>双模型兜底</small>
+          <strong class="{{ 'warning' if decision.fallback_used else 'ok' }}">
+            {{ "本次已启用" if decision.fallback_used else "当前未启用" }}
+          </strong>
+          <p>场景阈值 {{ scene_status.confidence_threshold }}，低于该值会启用兜底策略。</p>
         </div>
       </aside>
     </section>
 
     <section class="workspace">
       <article class="panel card">
-        <h2>上传测试</h2>
-        <p>{{ decision.reason }}</p>
-        <form method="post" enctype="multipart/form-data">
+        <div class="panel-head">
+          <div class="panel-copy">
+            <h2>上传与控制台</h2>
+            <p>选择模式、上传图片并调整阈值。下方卡片会同步显示模型可用性、checkpoint 状态和本次结果摘要。</p>
+          </div>
+          <span class="pill">Flask 本地演示页</span>
+        </div>
+
+        <form method="post" enctype="multipart/form-data" id="detect-form">
           <div class="field">
             <label for="mode">识别模式</label>
             <select id="mode" name="mode">
               {% for option in select_options %}
-                <option value="{{ option.key }}" {{ "selected" if option.key == requested_key else "" }}>{{ option.label }}</option>
+                <option
+                  value="{{ option.key }}"
+                  data-description="{{ option.description }}"
+                  {{ "selected" if option.key == requested_key else "" }}
+                >
+                  {{ option.label }}
+                </option>
               {% endfor %}
             </select>
+            <div id="mode-description" class="field-help" aria-live="polite"></div>
           </div>
-          <label class="picker">
-            <span>选择图片</span>
-            <input type="file" name="image" accept="image/*" required>
+
+          <label class="picker" for="image-input">
+            <div class="picker-title">
+              <strong>选择测试图片</strong>
+              <span class="mode-chip">image/*</span>
+            </div>
+            <span class="picker-note">支持常见图片格式。选择后会在这里显示文件名，提交后右侧出现标注结果。</span>
+            <span id="file-name" class="field-help">尚未选择文件</span>
+            <input id="image-input" type="file" name="image" accept="image/*" required>
           </label>
+
           <div class="field">
-            <label for="conf_threshold">检测置信度阈值，当前 SSD 模型建议 0.03 到 0.10</label>
+            <label for="conf_threshold">检测置信度阈值</label>
             <input id="conf_threshold" type="number" name="conf_threshold" min="0.01" max="0.9" step="0.01" value="{{ conf_threshold }}">
+            <div class="field-help">当前 SSD 模型建议从 <code>0.03</code> 到 <code>0.10</code> 之间调试，若想观察更多候选框，可降到 <code>0.01</code>。</div>
           </div>
-          <button type="submit">开始识别</button>
+
+          <div class="actions">
+            <button type="submit" id="submit-button">开始识别</button>
+            <span class="subtle-action">识别过程会复用已加载模型，重复调试会更快。</span>
+          </div>
         </form>
 
         {% if error %}
           <div class="hint warn" style="margin-top: 14px;">{{ error }}</div>
         {% else %}
           <div class="hint" style="margin-top: 14px;">
-            自动切换阈值：{{ scene_status.confidence_threshold }}。
             {% if decision.scene_label %}
-              场景判断：{{ "室内" if decision.scene_label == "indoor" else "室外" }}，置信度 {{ "%.3f"|format(decision.scene_confidence) }}。
+              自动判断结果为{{ "室内" if decision.scene_label == "indoor" else "室外" }}，场景置信度 {{ "%.3f"|format(decision.scene_confidence) }}。
             {% else %}
-              上传后会显示场景判断置信度。
+              上传后会展示场景判断置信度、实际选中的模型，以及是否触发双模型兜底。
             {% endif %}
-            {% if decision.fallback_used %}本次已启用双模型兜底。{% endif %}
+            {% if decision.fallback_used %}
+              当前结果来自双模型兜底策略。
+            {% endif %}
           </div>
         {% endif %}
 
-        <div class="status-grid">
-          <div class="status-item"><span>室外 mAP</span><strong>{{ "%.4f"|format(modes.outdoor.metrics.mAP) if modes.outdoor.metrics else "未评估" }}</strong></div>
-          <div class="status-item"><span>室内 mAP</span><strong>{{ "%.4f"|format(modes.indoor.metrics.mAP) if modes.indoor.metrics else "未评估" }}</strong></div>
-          <div class="status-item"><span>场景分类最佳验证准确率</span><strong>{{ "%.4f"|format(scene_status.best_val_acc) if scene_status.best_val_acc else "训练中" }}</strong></div>
-          <div class="status-item"><span>当前检测数</span><strong>{{ detections|length }}</strong></div>
-          <div class="status-item"><span>当前阈值</span><strong>{{ conf_threshold }}</strong></div>
-          <div class="status-item"><span>兜底状态</span><strong>{{ "已启用" if decision.fallback_used else "未启用" }}</strong></div>
+        <div class="mode-grid" style="margin-top: 16px;">
+          {% for option in select_options %}
+            {% if option.key == "auto" %}
+              <article class="mode-card {% if requested_key == 'auto' %}is-active{% endif %}">
+                <div class="mode-card-header">
+                  <div>
+                    <h3>{{ option.label }}</h3>
+                    <p class="mode-meta">{{ option.description }}</p>
+                  </div>
+                  <span class="mode-chip {% if scene_status.checkpoint_ready %}ready{% else %}pending{% endif %}">
+                    {{ "分类器可用" if scene_status.checkpoint_ready else "分类器缺失" }}
+                  </span>
+                </div>
+                <div class="mode-meta">
+                  <span>切换阈值</span>
+                  <strong>{{ scene_status.confidence_threshold }}</strong>
+                </div>
+                <div class="mode-meta">
+                  <span>最佳验证准确率</span>
+                  <strong>{{ "%.4f"|format(scene_status.best_val_acc) if scene_status.best_val_acc else "训练中" }}</strong>
+                </div>
+              </article>
+            {% else %}
+              {% set mode = modes[option.key] %}
+              <article class="mode-card {% if decision.selected_mode == option.key or requested_key == option.key %}is-active{% endif %}">
+                <div class="mode-card-header">
+                  <div>
+                    <h3>{{ mode.label }}</h3>
+                    <p class="mode-meta">{{ mode.description }}</p>
+                  </div>
+                  <span class="mode-chip {% if mode.checkpoint_ready %}ready{% else %}pending{% endif %}">
+                    {{ "checkpoint 就绪" if mode.checkpoint_ready else "checkpoint 缺失" }}
+                  </span>
+                </div>
+                <div class="mode-meta">
+                  <span>当前 checkpoint</span>
+                  <strong>{{ mode.checkpoint_name }}</strong>
+                </div>
+                <div class="mode-meta">
+                  <span>验证集 mAP</span>
+                  <strong>{{ "%.4f"|format(mode.metrics.mAP) if mode.metrics else "未评估" }}</strong>
+                </div>
+              </article>
+            {% endif %}
+          {% endfor %}
         </div>
+
+        <div class="status-grid">
+          <div class="status-item">
+            <span>室外模型 mAP</span>
+            <strong>{{ "%.4f"|format(modes.outdoor.metrics.mAP) if modes.outdoor.metrics else "未评估" }}</strong>
+          </div>
+          <div class="status-item">
+            <span>室内模型 mAP</span>
+            <strong>{{ "%.4f"|format(modes.indoor.metrics.mAP) if modes.indoor.metrics else "未评估" }}</strong>
+          </div>
+          <div class="status-item">
+            <span>当前检测数</span>
+            <strong>{{ detections|length }}</strong>
+          </div>
+          <div class="status-item">
+            <span>实际使用模式</span>
+            <strong>{{ decision.selected_label }}</strong>
+          </div>
+        </div>
+
+        {% if decision.detector_scores %}
+          <div class="score-grid">
+            <div class="score-card">
+              <span>室外模型候选得分</span>
+              <strong>{{ "%.3f"|format(decision.detector_scores.get("outdoor", 0.0)) }}</strong>
+            </div>
+            <div class="score-card">
+              <span>室内模型候选得分</span>
+              <strong>{{ "%.3f"|format(decision.detector_scores.get("indoor", 0.0)) }}</strong>
+            </div>
+          </div>
+        {% endif %}
       </article>
 
       <article class="panel card">
-        <h2>识别结果</h2>
+        <div class="panel-head">
+          <div class="panel-copy">
+            <h2>识别结果</h2>
+            <p>结果区包含渲染后的框图、检测摘要和结构化明细，方便你快速判断这轮推理是否可靠。</p>
+          </div>
+          <span class="pill">{{ detections|length }} 个目标</span>
+        </div>
+
+        <div class="result-grid">
+          <div class="summary-card">
+            <span>本次调用模型</span>
+            <strong>{{ decision.selected_label }}</strong>
+          </div>
+          <div class="summary-card">
+            <span>场景判定</span>
+            <strong>
+              {% if decision.scene_label %}
+                {{ "室内" if decision.scene_label == "indoor" else "室外" }}
+              {% else %}
+                等待上传
+              {% endif %}
+            </strong>
+          </div>
+        </div>
+
         {% if result_image %}
-          <div class="preview">
+          <div class="preview" style="margin-top: 16px;">
             <img src="data:image/png;base64,{{ result_image }}" alt="检测结果">
           </div>
         {% else %}
-          <div class="empty">上传图片后，这里会显示带红框的检测结果。</div>
+          <div class="empty" style="margin-top: 16px;">
+            这里会显示带检测框的结果图。<br>
+            先上传一张测试图片，就能快速确认当前模型是否正常响应。
+          </div>
         {% endif %}
 
+        <div class="result-callout" style="margin-top: 16px;">
+          <span class="label">结果摘要</span>
+          {% if detections %}
+            <strong>检测到 {{ detections|length }} 个候选目标。</strong>
+            <p>下方表格按类别、置信度和框坐标列出所有检测结果，适合对照阈值调参。</p>
+          {% else %}
+            <strong>当前没有超过阈值的检测框。</strong>
+            <p>如果只是想看模型是否有响应，可以先把阈值降到 <code>0.01</code> 再试一张更清晰的图片。</p>
+          {% endif %}
+        </div>
+
         {% if detections %}
-          <table style="margin-top: 16px;">
-            <thead><tr><th>类别</th><th>置信度</th><th>框坐标</th></tr></thead>
-            <tbody>
-              {% for det in detections %}
-                <tr><td>{{ det.label }}</td><td>{{ "%.3f"|format(det.score) }}</td><td>{{ det.box }}</td></tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        {% else %}
-          <div class="empty" style="margin-top: 16px;">当前还没有超过阈值的检测结果。如果只是想看模型是否有响应，可先把阈值调到 0.01。</div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>类别</th>
+                  <th>置信度</th>
+                  <th>框坐标</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for det in detections %}
+                  <tr>
+                    <td>{{ det.label }}</td>
+                    <td>{{ "%.3f"|format(det.score) }}</td>
+                    <td><code>{{ det.box }}</code></td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
         {% endif %}
       </article>
     </section>
   </main>
+
+  <script>
+    const modeSelect = document.getElementById("mode");
+    const modeDescription = document.getElementById("mode-description");
+    const imageInput = document.getElementById("image-input");
+    const fileName = document.getElementById("file-name");
+    const detectForm = document.getElementById("detect-form");
+    const submitButton = document.getElementById("submit-button");
+
+    function updateModeDescription() {
+      const selectedOption = modeSelect.options[modeSelect.selectedIndex];
+      modeDescription.textContent = selectedOption?.dataset.description || "";
+    }
+
+    function updateFileName() {
+      const selectedFile = imageInput.files && imageInput.files[0];
+      fileName.textContent = selectedFile ? `已选择: ${selectedFile.name}` : "尚未选择文件";
+    }
+
+    modeSelect.addEventListener("change", updateModeDescription);
+    imageInput.addEventListener("change", updateFileName);
+
+    detectForm.addEventListener("submit", () => {
+      submitButton.disabled = true;
+      submitButton.textContent = "识别中...";
+    });
+
+    updateModeDescription();
+    updateFileName();
+  </script>
 </body>
 </html>

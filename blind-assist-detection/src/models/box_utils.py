@@ -104,6 +104,116 @@ def xyxy_to_cxcywh(boxes):
     return torch.stack([cx, cy, w, h], dim=1)
 
 
+def ciou_loss(pred_boxes, target_boxes, eps=1e-7):
+    """
+    Compute Complete IoU loss for aligned boxes in xyxy format.
+    Returns loss per box: 1 - CIoU.
+    """
+    if pred_boxes.numel() == 0 or target_boxes.numel() == 0:
+        return torch.zeros(0, device=pred_boxes.device if pred_boxes.numel() else target_boxes.device)
+
+    pred_x1, pred_y1, pred_x2, pred_y2 = pred_boxes.unbind(dim=1)
+    target_x1, target_y1, target_x2, target_y2 = target_boxes.unbind(dim=1)
+
+    inter_x1 = torch.max(pred_x1, target_x1)
+    inter_y1 = torch.max(pred_y1, target_y1)
+    inter_x2 = torch.min(pred_x2, target_x2)
+    inter_y2 = torch.min(pred_y2, target_y2)
+
+    inter_w = (inter_x2 - inter_x1).clamp(min=0)
+    inter_h = (inter_y2 - inter_y1).clamp(min=0)
+    inter_area = inter_w * inter_h
+
+    pred_area = (pred_x2 - pred_x1).clamp(min=0) * (pred_y2 - pred_y1).clamp(min=0)
+    target_area = (target_x2 - target_x1).clamp(min=0) * (target_y2 - target_y1).clamp(min=0)
+    union = pred_area + target_area - inter_area + eps
+    iou = inter_area / union
+
+    pred_cx = (pred_x1 + pred_x2) / 2
+    pred_cy = (pred_y1 + pred_y2) / 2
+    target_cx = (target_x1 + target_x2) / 2
+    target_cy = (target_y1 + target_y2) / 2
+    center_distance = (pred_cx - target_cx) ** 2 + (pred_cy - target_cy) ** 2
+
+    enc_x1 = torch.min(pred_x1, target_x1)
+    enc_y1 = torch.min(pred_y1, target_y1)
+    enc_x2 = torch.max(pred_x2, target_x2)
+    enc_y2 = torch.max(pred_y2, target_y2)
+    enc_diag = (enc_x2 - enc_x1) ** 2 + (enc_y2 - enc_y1) ** 2 + eps
+
+    pred_w = (pred_x2 - pred_x1).clamp(min=eps)
+    pred_h = (pred_y2 - pred_y1).clamp(min=eps)
+    target_w = (target_x2 - target_x1).clamp(min=eps)
+    target_h = (target_y2 - target_y1).clamp(min=eps)
+
+    v = (4 / (np.pi ** 2)) * torch.pow(torch.atan(target_w / target_h) - torch.atan(pred_w / pred_h), 2)
+    alpha = v / (1 - iou + v + eps)
+    ciou = iou - (center_distance / enc_diag + alpha * v)
+    return 1 - ciou
+
+
+def iou_loss(pred_boxes, target_boxes, eps=1e-7):
+    """Compute IoU loss for aligned boxes in xyxy format."""
+    if pred_boxes.numel() == 0 or target_boxes.numel() == 0:
+        return torch.zeros(0, device=pred_boxes.device if pred_boxes.numel() else target_boxes.device)
+
+    pred_x1, pred_y1, pred_x2, pred_y2 = pred_boxes.unbind(dim=1)
+    target_x1, target_y1, target_x2, target_y2 = target_boxes.unbind(dim=1)
+
+    inter_x1 = torch.max(pred_x1, target_x1)
+    inter_y1 = torch.max(pred_y1, target_y1)
+    inter_x2 = torch.min(pred_x2, target_x2)
+    inter_y2 = torch.min(pred_y2, target_y2)
+
+    inter_w = (inter_x2 - inter_x1).clamp(min=0)
+    inter_h = (inter_y2 - inter_y1).clamp(min=0)
+    inter_area = inter_w * inter_h
+
+    pred_area = (pred_x2 - pred_x1).clamp(min=0) * (pred_y2 - pred_y1).clamp(min=0)
+    target_area = (target_x2 - target_x1).clamp(min=0) * (target_y2 - target_y1).clamp(min=0)
+    union = pred_area + target_area - inter_area + eps
+    iou = inter_area / union
+    return 1 - iou
+
+
+def diou_loss(pred_boxes, target_boxes, eps=1e-7):
+    """Compute DIoU loss for aligned boxes in xyxy format."""
+    if pred_boxes.numel() == 0 or target_boxes.numel() == 0:
+        return torch.zeros(0, device=pred_boxes.device if pred_boxes.numel() else target_boxes.device)
+
+    pred_x1, pred_y1, pred_x2, pred_y2 = pred_boxes.unbind(dim=1)
+    target_x1, target_y1, target_x2, target_y2 = target_boxes.unbind(dim=1)
+
+    inter_x1 = torch.max(pred_x1, target_x1)
+    inter_y1 = torch.max(pred_y1, target_y1)
+    inter_x2 = torch.min(pred_x2, target_x2)
+    inter_y2 = torch.min(pred_y2, target_y2)
+
+    inter_w = (inter_x2 - inter_x1).clamp(min=0)
+    inter_h = (inter_y2 - inter_y1).clamp(min=0)
+    inter_area = inter_w * inter_h
+
+    pred_area = (pred_x2 - pred_x1).clamp(min=0) * (pred_y2 - pred_y1).clamp(min=0)
+    target_area = (target_x2 - target_x1).clamp(min=0) * (target_y2 - target_y1).clamp(min=0)
+    union = pred_area + target_area - inter_area + eps
+    iou = inter_area / union
+
+    pred_cx = (pred_x1 + pred_x2) / 2
+    pred_cy = (pred_y1 + pred_y2) / 2
+    target_cx = (target_x1 + target_x2) / 2
+    target_cy = (target_y1 + target_y2) / 2
+    center_distance = (pred_cx - target_cx) ** 2 + (pred_cy - target_cy) ** 2
+
+    enc_x1 = torch.min(pred_x1, target_x1)
+    enc_y1 = torch.min(pred_y1, target_y1)
+    enc_x2 = torch.max(pred_x2, target_x2)
+    enc_y2 = torch.max(pred_y2, target_y2)
+    enc_diag = (enc_x2 - enc_x1) ** 2 + (enc_y2 - enc_y1) ** 2 + eps
+
+    diou = iou - center_distance / enc_diag
+    return 1 - diou
+
+
 def jaccard(boxes_a, boxes_b):
     """
     计算 IoU (Intersection over Union)

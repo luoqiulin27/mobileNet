@@ -8,6 +8,7 @@ from PIL import Image, ImageDraw, ImageFont
 from torchvision import transforms
 
 from src.configs.runtime import load_config, resolve_project_path
+from src.inference.risk_assessment import summarize_risks
 from src.models.ssd_mobilenet import SSDMobileNetV2
 
 
@@ -43,6 +44,9 @@ class DetectionPredictor:
             num_classes=self.config["model"]["num_classes"],
             pretrained=False,
             input_size=self.input_size,
+            backbone=self.config["model"].get("backbone", "mobilenet_v2"),
+            use_eca=self.config["model"].get("use_eca", False),
+            eca_stages=self.config["model"].get("eca_stages"),
         ).to(self.device)
         self.model.configure_anchors(
             self.config["anchors"]["feature_maps"],
@@ -50,8 +54,8 @@ class DetectionPredictor:
             self.config["anchors"]["max_sizes"],
             self.config["anchors"]["aspect_ratios"],
         )
-        checkpoint = torch.load(self.checkpoint_path, map_location=self.device)
-        self.model.load_state_dict(checkpoint["model_state_dict"])
+        checkpoint = torch.load(self.checkpoint_path, map_location=self.device, weights_only=False)
+        self.model.load_state_dict(checkpoint["model_state_dict"], strict=False)
         self.model.eval()
 
         self.transform = transforms.Compose(
@@ -122,6 +126,9 @@ class DetectionPredictor:
 
         detections.sort(key=lambda item: item.score, reverse=True)
         return detections
+
+    def assess_risks(self, image: Image.Image, detections: list[Detection]) -> dict:
+        return summarize_risks(detections, image.convert("RGB").size)
 
     def render(self, image: Image.Image, detections: list[Detection]) -> Image.Image:
         canvas = image.convert("RGB").copy()

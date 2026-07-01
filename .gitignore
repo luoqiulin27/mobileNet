@@ -1,5 +1,6 @@
 # ===== 数据集（太大，不上传）=====
 data/
+!**/configs/classes.txt
 *.zip
 *.tar.gz
 *.rar

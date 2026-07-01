@@ -200,6 +200,9 @@ def main() -> int:
         num_classes=config["model"]["num_classes"],
         pretrained=False,
         input_size=config["model"]["input_size"][0],
+        backbone=config["model"].get("backbone", "mobilenet_v2"),
+        use_eca=config["model"].get("use_eca", False),
+        eca_stages=config["model"].get("eca_stages"),
     ).to(device)
     model.configure_anchors(
         config["anchors"]["feature_maps"],

@@ -35,6 +35,7 @@ blind-assist-detection/
     convert/            dataset rebuild pipeline
     eval/               evaluation scripts
     train/              training entrypoints
+  frontend/             standalone React + Vite frontend
   src/
     configs/            runtime and model config
     datasets/           dataset logic and SANPO profiles
@@ -114,7 +115,40 @@ Open:
 Available endpoints:
 
 - `GET /health`
+- `GET /api/meta`
 - `POST /api/predict`
+
+## Split Frontend
+
+The repo now includes a standalone frontend in `frontend/` for a cleaner API/UI split.
+
+Suggested local workflow:
+
+1. Start the Flask API:
+
+```powershell
+cd D:\projects\MobileNet\mobileNet
+start_api_server.bat
+```
+
+2. Install frontend dependencies:
+
+```powershell
+cd D:\projects\MobileNet\mobileNet\blind-assist-detection\frontend
+cmd /c npm install
+```
+
+3. Start the React frontend:
+
+```powershell
+cd D:\projects\MobileNet\mobileNet
+start_frontend_demo.bat
+```
+
+Development URLs:
+
+- Flask API / legacy demo: `http://127.0.0.1:5000`
+- React frontend: `http://127.0.0.1:5173`
 
 Checkpoint loading order:
 

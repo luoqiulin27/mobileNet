@@ -17,6 +17,8 @@ model:
   pretrained: true
   input_size: [300, 300]
   num_classes: 13
+  use_eca: false
+  eca_stages: [0, 1, 2, 3, 4]
 
 augmentation:
   train:
@@ -50,6 +52,7 @@ loss:
   loc_weight: 1.0
   conf_weight: 1.0
   neg_pos_ratio: 3
+  box_loss: "smooth_l1"
 
 evaluation:
   iou_threshold: 0.5

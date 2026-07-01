@@ -10,7 +10,15 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from src.models.box_utils import match_anchors, encode_boxes
+from src.models.box_utils import (
+    ciou_loss,
+    diou_loss,
+    cxcywh_to_xyxy,
+    decode_boxes,
+    encode_boxes,
+    iou_loss,
+    match_anchors,
+)
 
 
 class MultiBoxLoss(nn.Module):
@@ -22,10 +30,11 @@ class MultiBoxLoss(nn.Module):
         loc_weight: 回归损失权重
     """
 
-    def __init__(self, neg_pos_ratio=3, loc_weight=1.0):
+    def __init__(self, neg_pos_ratio=3, loc_weight=1.0, box_loss="smooth_l1"):
         super().__init__()
         self.neg_pos_ratio = neg_pos_ratio
         self.loc_weight = loc_weight
+        self.box_loss = box_loss.lower()
 
     def forward(self, conf_pred, loc_pred, gt_boxes, gt_labels, anchors, anchors_xyxy=None):
         """
@@ -113,7 +122,20 @@ class MultiBoxLoss(nn.Module):
             loc_pred_b = loc_pred[b][pos_mask_b]  # [num_pos, 4]
             loc_target_b = all_loc_targets[b]      # [num_pos, 4]
 
-            loc_loss = loc_loss + F.smooth_l1_loss(loc_pred_b, loc_target_b, reduction='sum')
+            if self.box_loss == "ciou":
+                decoded_pred = cxcywh_to_xyxy(decode_boxes(loc_pred_b, anchors[pos_mask_b]))
+                decoded_target = cxcywh_to_xyxy(decode_boxes(loc_target_b, anchors[pos_mask_b]))
+                loc_loss = loc_loss + ciou_loss(decoded_pred, decoded_target).sum()
+            elif self.box_loss == "diou":
+                decoded_pred = cxcywh_to_xyxy(decode_boxes(loc_pred_b, anchors[pos_mask_b]))
+                decoded_target = cxcywh_to_xyxy(decode_boxes(loc_target_b, anchors[pos_mask_b]))
+                loc_loss = loc_loss + diou_loss(decoded_pred, decoded_target).sum()
+            elif self.box_loss == "iou":
+                decoded_pred = cxcywh_to_xyxy(decode_boxes(loc_pred_b, anchors[pos_mask_b]))
+                decoded_target = cxcywh_to_xyxy(decode_boxes(loc_target_b, anchors[pos_mask_b]))
+                loc_loss = loc_loss + iou_loss(decoded_pred, decoded_target).sum()
+            else:
+                loc_loss = loc_loss + F.smooth_l1_loss(loc_pred_b, loc_target_b, reduction='sum')
 
         num_pos_total = sum(p.sum().item() for p in all_pos_mask)
         loc_loss = loc_loss / max(num_pos_total, 1)

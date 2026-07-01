@@ -1,14 +1,91 @@
 """
-MobileNetV2-SSD300 轻量检测模型
+SSD300 检测模型
 
 结构:
-  MobileNetV2 Backbone → 多尺度特征 → SSD 检测头 → NMS
+  Backbone → 多尺度特征 → SSD 检测头 → NMS
 """
 import torch
 import torch.nn as nn
-from torchvision.models import mobilenet_v2, MobileNet_V2_Weights
+from torchvision.models import (
+    MobileNet_V2_Weights,
+    ResNet50_Weights,
+    VGG16_BN_Weights,
+    mobilenet_v2,
+    resnet50,
+    vgg16_bn,
+)
 
 from .box_utils import generate_anchors, decode_boxes, cxcywh_to_xyxy, nms
+
+
+class ECABlock(nn.Module):
+    """Efficient Channel Attention."""
+
+    def __init__(self, channels: int, gamma: int = 2, bias: int = 1):
+        super().__init__()
+        kernel_size = int(abs((torch.log2(torch.tensor(float(channels))).item() + bias) / gamma))
+        kernel_size = kernel_size if kernel_size % 2 == 1 else kernel_size + 1
+        kernel_size = max(kernel_size, 3)
+        self.pool = nn.AdaptiveAvgPool2d(1)
+        self.conv = nn.Conv1d(1, 1, kernel_size=kernel_size, padding=kernel_size // 2, bias=False)
+        self.activation = nn.Sigmoid()
+
+    def forward(self, x):
+        weights = self.pool(x)
+        weights = weights.squeeze(-1).transpose(-1, -2)
+        weights = self.conv(weights)
+        weights = self.activation(weights.transpose(-1, -2).unsqueeze(-1))
+        return x * weights.expand_as(x)
+
+
+class SEBlock(nn.Module):
+    """Squeeze-and-Excitation."""
+
+    def __init__(self, channels: int, reduction: int = 16):
+        super().__init__()
+        hidden = max(channels // reduction, 4)
+        self.pool = nn.AdaptiveAvgPool2d(1)
+        self.fc = nn.Sequential(
+            nn.Linear(channels, hidden, bias=False),
+            nn.ReLU(inplace=True),
+            nn.Linear(hidden, channels, bias=False),
+            nn.Sigmoid(),
+        )
+
+    def forward(self, x):
+        b, c, _, _ = x.shape
+        weights = self.pool(x).view(b, c)
+        weights = self.fc(weights).view(b, c, 1, 1)
+        return x * weights
+
+
+class CBAMBlock(nn.Module):
+    """Convolutional Block Attention Module."""
+
+    def __init__(self, channels: int, reduction: int = 16, spatial_kernel: int = 7):
+        super().__init__()
+        hidden = max(channels // reduction, 4)
+        self.mlp = nn.Sequential(
+            nn.Linear(channels, hidden, bias=False),
+            nn.ReLU(inplace=True),
+            nn.Linear(hidden, channels, bias=False),
+        )
+        self.spatial = nn.Sequential(
+            nn.Conv2d(2, 1, kernel_size=spatial_kernel, padding=spatial_kernel // 2, bias=False),
+            nn.Sigmoid(),
+        )
+
+    def forward(self, x):
+        b, c, _, _ = x.shape
+        avg_pool = torch.mean(x, dim=(2, 3))
+        max_pool = torch.amax(x, dim=(2, 3))
+        channel_attn = torch.sigmoid(self.mlp(avg_pool) + self.mlp(max_pool)).view(b, c, 1, 1)
+        x = x * channel_attn
+
+        avg_spatial = torch.mean(x, dim=1, keepdim=True)
+        max_spatial = torch.amax(x, dim=1, keepdim=True)
+        spatial_attn = self.spatial(torch.cat([avg_spatial, max_spatial], dim=1))
+        return x * spatial_attn
 
 
 class SSDMobileNetV2(nn.Module):
@@ -21,39 +98,80 @@ class SSDMobileNetV2(nn.Module):
         input_size: 输入尺寸
     """
 
-    def __init__(self, num_classes=9, pretrained=True, input_size=300):
+    # MobileNetV2 has 19 feature blocks, split at index 14:
+    #   features[0:14] → backbone_stage1 (indices 0-13)
+    #   features[14:19] → backbone_stage2 (indices 14-18)
+    _OLD_BACKBONE_MAPPING = None
+
+    @classmethod
+    def _get_backbone_remap(cls):
+        if cls._OLD_BACKBONE_MAPPING is not None:
+            return cls._OLD_BACKBONE_MAPPING
+        remap = {}
+        # features.{i}.X → backbone_stage1.{i}.X  for i=0..13
+        for i in range(14):
+            remap[f"features.{i}."] = f"backbone_stage1.{i}."
+        # features.{i}.X → backbone_stage2.{i-14}.X  for i=14..18
+        for i in range(14, 19):
+            remap[f"features.{i}."] = f"backbone_stage2.{i - 14}."
+        cls._OLD_BACKBONE_MAPPING = remap
+        return remap
+
+    def load_state_dict(self, state_dict, strict=True):
+        """Load state_dict with backward compatibility for old checkpoint keys."""
+        remap = self._get_backbone_remap()
+        new_state = {}
+        for key, value in state_dict.items():
+            mapped = key
+            for old_prefix, new_prefix in remap.items():
+                if key.startswith(old_prefix):
+                    mapped = new_prefix + key[len(old_prefix):]
+                    break
+            new_state[mapped] = value
+
+        # Also handle the inverse: new model expects features.* but gets backbone_stage*
+        if "features.0.0.weight" in state_dict or any(k.startswith("features.") for k in state_dict):
+            pass  # already handled above
+
+        return super().load_state_dict(new_state, strict=strict)
+
+    def __init__(
+        self,
+        num_classes=9,
+        pretrained=True,
+        input_size=300,
+        backbone="mobilenet_v2",
+        attention_type=None,
+        use_eca=False,
+        eca_stages=None,
+    ):
         super().__init__()
         self.num_classes = num_classes
         self.input_size = input_size
+        self.backbone_name = backbone
+        self.attention_type = (attention_type or ("eca" if use_eca else "")).lower()
 
-        # ---- Backbone: MobileNetV2 ----
-        weights = MobileNet_V2_Weights.DEFAULT if pretrained else None
-        backbone = mobilenet_v2(weights=weights)
-        self.features = backbone.features  # 到 layer13 → 19×19×960
-
-        # MobileNetV2 features 层通道数:
-        # layer0-10: → 64 channels
-        # layer11-13: → 96 channels (stride 8, 38×38)
-        # layer14-16: → 160 channels (stride 16, 19×19)
-        # layer17: → 320 channels
-        # layer18: Conv1x1 → 1280 channels (stride 32, 10×10)
-
-        # 分段提取多尺度特征
-        self.backbone_stage1 = nn.Sequential(*list(backbone.features)[:14])  # → 19×19×96
-        self.backbone_stage2 = nn.Sequential(*list(backbone.features)[14:])  # → 10×10×1280
+        self.backbone_stage1, self.backbone_stage2, stage_channels = self._build_backbone(
+            backbone=backbone,
+            pretrained=pretrained,
+        )
 
         # ---- 额外特征层 (逐步下采样) ----
         self.extra_layers = nn.ModuleList([
-            # 10×10×1280 → 5×5×512
-            self._make_extra_layer(1280, 512, stride=2),
+            # 10×10 → 5×5
+            self._make_extra_layer(stage_channels[1], 512, stride=2),
             # 5×5×512 → 3×3×256
             self._make_extra_layer(512, 256, stride=2),
-            # 3×3×256 → 1×1×128
+            # 3×3×256 → 2×2×128
             self._make_extra_layer(256, 128, stride=2),
         ])
 
-        # 特征图通道数: 19×19→96, 10×10→1280, 5×5→512, 3×3→256, 1×1→128
-        self.feat_channels = [96, 1280, 512, 256, 128]
+        # 特征图通道数: 19×19, 10×10, 5×5, 3×3, 2×2
+        self.feat_channels = [stage_channels[0], stage_channels[1], 512, 256, 128]
+        requested_stages = set(eca_stages or range(len(self.feat_channels)))
+        self.attention_layers = nn.ModuleList(
+            [self._build_attention_layer(ch, idx in requested_stages) for idx, ch in enumerate(self.feat_channels)]
+        )
 
         # ---- 检测头 ----
         # 每个尺度: 分类头 + 回归头
@@ -76,6 +194,54 @@ class SSDMobileNetV2(nn.Module):
 
         # 初始化检测头
         self._init_heads()
+
+    def _build_attention_layer(self, channels: int, enabled: bool) -> nn.Module:
+        if not enabled or not self.attention_type:
+            return nn.Identity()
+        if self.attention_type == "eca":
+            return ECABlock(channels)
+        if self.attention_type == "se":
+            return SEBlock(channels)
+        if self.attention_type == "cbam":
+            return CBAMBlock(channels)
+        raise ValueError(f"unsupported attention type: {self.attention_type}")
+
+    def _build_backbone(self, backbone: str, pretrained: bool) -> tuple[nn.Module, nn.Module, tuple[int, int]]:
+        backbone = backbone.lower()
+        if backbone == "mobilenet_v2":
+            weights = MobileNet_V2_Weights.DEFAULT if pretrained else None
+            model = mobilenet_v2(weights=weights)
+            stage1 = nn.Sequential(*list(model.features)[:14])   # 19x19x96
+            stage2 = nn.Sequential(*list(model.features)[14:])   # 10x10x1280
+            return stage1, stage2, (96, 1280)
+
+        if backbone == "resnet50":
+            weights = ResNet50_Weights.DEFAULT if pretrained else None
+            model = resnet50(weights=weights)
+            stage1 = nn.Sequential(
+                model.conv1,
+                model.bn1,
+                model.relu,
+                model.maxpool,
+                model.layer1,
+                model.layer2,
+                model.layer3,
+            )  # 19x19x1024
+            stage2 = model.layer4  # 10x10x2048
+            return stage1, stage2, (1024, 2048)
+
+        if backbone == "vgg16":
+            weights = VGG16_BN_Weights.DEFAULT if pretrained else None
+            model = vgg16_bn(weights=weights)
+            # Use ceil_mode to align 300x300 inputs with SSD-style 38/19/10 feature maps.
+            for pool_idx in (23, 33, 43):
+                if hasattr(model.features[pool_idx], "ceil_mode"):
+                    model.features[pool_idx].ceil_mode = True
+            stage1 = nn.Sequential(*list(model.features)[:34])   # 19x19x512
+            stage2 = nn.Sequential(*list(model.features)[34:44]) # 10x10x512
+            return stage1, stage2, (512, 512)
+
+        raise ValueError(f"unsupported backbone: {backbone}")
 
     def _make_extra_layer(self, in_ch, out_ch, stride=2):
         """创建额外卷积层"""
@@ -162,7 +328,10 @@ class SSDMobileNetV2(nn.Module):
         conf_list = []
         loc_list = []
 
-        for i, (feat, cls_head, reg_head) in enumerate(zip(features, self.cls_heads, self.reg_heads)):
+        for i, (feat, attention_layer, cls_head, reg_head) in enumerate(
+            zip(features, self.attention_layers, self.cls_heads, self.reg_heads)
+        ):
+            feat = attention_layer(feat)
             cls = cls_head(feat)  # [B, na*nc, H, W]
             reg = reg_head(feat)  # [B, na*4, H, W]
 
@@ -264,4 +433,8 @@ def build_model(config):
         num_classes=model_cfg["num_classes"],
         pretrained=model_cfg["pretrained"],
         input_size=model_cfg["input_size"][0],
+        backbone=model_cfg.get("backbone", "mobilenet_v2"),
+        attention_type=model_cfg.get("attention_type"),
+        use_eca=model_cfg.get("use_eca", False),
+        eca_stages=model_cfg.get("eca_stages"),
     )

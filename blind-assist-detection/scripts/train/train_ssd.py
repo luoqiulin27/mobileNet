@@ -136,7 +136,11 @@ def load_checkpoint(
 def load_model_weights(path: Path, *, model: torch.nn.Module, device: torch.device) -> None:
     checkpoint = torch.load(path, map_location=device)
     state_dict = checkpoint.get("model_state_dict", checkpoint)
-    model.load_state_dict(state_dict)
+    missing_keys, unexpected_keys = model.load_state_dict(state_dict, strict=False)
+    if missing_keys:
+        log(f"[Train] missing keys while loading init weights: {missing_keys}")
+    if unexpected_keys:
+        log(f"[Train] unexpected keys while loading init weights: {unexpected_keys}")
 
 
 def resolve_resume_path(args: argparse.Namespace) -> Path | None:
@@ -238,6 +242,9 @@ def main() -> None:
         num_classes=config["model"]["num_classes"],
         pretrained=config["model"]["pretrained"],
         input_size=input_size,
+        backbone=config["model"].get("backbone", "mobilenet_v2"),
+        use_eca=config["model"].get("use_eca", False),
+        eca_stages=config["model"].get("eca_stages"),
     ).to(device)
     if channels_last:
         model = model.to(memory_format=torch.channels_last)
@@ -273,6 +280,7 @@ def main() -> None:
     criterion = MultiBoxLoss(
         neg_pos_ratio=config["loss"]["neg_pos_ratio"],
         loc_weight=config["loss"]["loc_weight"],
+        box_loss=config["loss"].get("box_loss", "smooth_l1"),
     )
     optimizer = build_optimizer(model, config)
 
