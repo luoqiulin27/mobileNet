@@ -13,7 +13,10 @@ data/
 # ===== 训练输出（日志、指标、可视化）=====
 **/outputs/logs/
 **/outputs/metrics/
+!**/outputs/metrics/*.json
+!**/metrics/train_status.json
 **/outputs/visualizations/
+**/outputs/runs/*/checkpoints/
 
 # ===== Python 缓存 =====
 __pycache__/

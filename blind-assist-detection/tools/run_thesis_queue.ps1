@@ -47,6 +47,43 @@ function Test-EvalDone($runName, $evalType) {
     return (Test-Path -LiteralPath $outputPath)
 }
 
+function Invoke-GitPush($runName, $tag) {
+    Write-Stage "GIT-PUSH START  run=$runName tag=$tag"
+    try {
+        # only track metrics json + train_status (not 60MB checkpoints)
+        git add "outputs\runs\$runName\metrics\*.json" "outputs\runs\$runName\metrics\train_status.json" 2>&1 | Out-Null
+        $commitMsg = "exp: $tag results ($(Get-Date -Format 'yyyy-MM-dd HH:mm'))"
+        git commit -m $commitMsg 2>&1 | Out-Null
+        Write-Stage "GIT COMMIT DONE  $commitMsg"
+
+        # push (may fail in non-interactive session, that's ok)
+        $pushResult = git push origin master 2>&1
+        if ($LASTEXITCODE -eq 0) {
+            Write-Stage "GIT PUSH DONE"
+        } else {
+            Write-Stage "GIT PUSH DEFERRED (will push later) $pushResult"
+        }
+    } catch {
+        Write-Stage "GIT-PUSH ERROR  $_"
+    }
+}
+
+function Invoke-GitPushFinal {
+    Write-Stage "GIT FINAL PUSH all accumulated commits"
+    try {
+        git add "outputs\runs\*\metrics\*.json" "outputs\runs\*\metrics\train_status.json" 2>&1 | Out-Null
+        git commit -m "all thesis experiments complete ($(Get-Date -Format 'yyyy-MM-dd HH:mm'))" 2>&1 | Out-Null
+        $pushResult = git push origin master 2>&1
+        if ($LASTEXITCODE -eq 0) {
+            Write-Stage "GIT FINAL PUSH DONE"
+        } else {
+            Write-Stage "GIT FINAL PUSH DEFERRED - please push manually via RDP"
+        }
+    } catch {
+        Write-Stage "GIT FINAL PUSH ERROR $_"
+    }
+}
+
 function Invoke-Train($config, $runName, $epochs = 100, $batchSize = 16, $numWorkers = 4, $valEvery = 5) {
     $runDir = "outputs\runs\$runName"
     $logDir  = "$runDir\logs"
@@ -179,6 +216,9 @@ function Invoke-TrainAndEval($tag, $config, $runName, $epochs = 100, $needsTrain
 
     Write-Stage "EXPERIMENT $tag COMPLETE"
     Write-Stage ""
+
+    # ---- auto commit & push results to git ----
+    Invoke-GitPush -runName $runName -tag $tag
 }
 
 
@@ -254,12 +294,12 @@ Write-Stage "============================================================"
 Write-Stage "QUEUE START  $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
 Write-Stage "============================================================"
 
-# ---- A3: CIoU (train done, eval only) ----
+# ---- A3: CIoU (train from scratch) ----
 Invoke-TrainAndEval `
     -tag "A3_CIoU" `
     -config "src\configs\ssd_default_ciou.yaml" `
     -runName "sanpo_ablation_ciou_formal100" `
-    -needsTraining $false
+    -needsTraining $true
 
 # ---- A4: ECA + CIoU ----
 Invoke-TrainAndEval `
@@ -290,6 +330,9 @@ Invoke-TrainAndEval `
     -tag "B4_DIoU" `
     -config "src\configs\ssd_default_diou.yaml" `
     -runName "sanpo_ablation_diou_formal100"
+
+# ---- final git push ----
+Invoke-GitPushFinal
 
 Write-Stage "============================================================"
 Write-Stage "QUEUE COMPLETE  $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
